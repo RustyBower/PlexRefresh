@@ -22,7 +22,7 @@ docker run -d \
   -p 5000:5000 \
   -e PLEX_URL=https://your-plex-server.com:32400 \
   -e PLEX_TOKEN=your-plex-token \
-  ghcr.io/yourusername/plexrefresh:latest
+  ghcr.io/rustybower/plexrefresh:latest
 ```
 
 Then open http://localhost:5000 in your browser.
@@ -31,7 +31,7 @@ Then open http://localhost:5000 in your browser.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/PlexRefresh.git
+   git clone https://github.com/RustyBower/PlexRefresh.git
    cd PlexRefresh
    ```
 
@@ -83,7 +83,7 @@ Look for the `PlexOnlineToken` attribute.
 version: '3'
 services:
   plex-refresh:
-    image: ghcr.io/yourusername/plexrefresh:latest
+    image: ghcr.io/rustybower/plexrefresh:latest
     ports:
       - "5000:5000"
     environment:
