@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plex Refresh</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #16213e;
+            padding: 20px;
+            border-right: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+
+        .sidebar h2 {
+            color: #e94560;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+        }
+
+        .section-list {
+            list-style: none;
+        }
+
+        .section-item {
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            background: #0f3460;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .section-item:hover {
+            background: #1a4a7a;
+            transform: translateX(5px);
+        }
+
+        .section-item.active {
+            background: #e94560;
+        }
+
+        .section-type {
+            font-size: 0.75rem;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+
+        .main {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .breadcrumb-item {
+            color: #e94560;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb-separator {
+            color: #666;
+        }
+
+        .breadcrumb-current {
+            color: #eee;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+        }
+
+        .refresh-btn {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s, transform 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .refresh-btn:hover {
+            background: #d63850;
+            transform: scale(1.02);
+        }
+
+        .refresh-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .refresh-btn.small {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+        }
+
+        .items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .item-card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            border: 1px solid #0f3460;
+        }
+
+        .item-card:hover {
+            background: #1a3a5c;
+            transform: translateY(-3px);
+        }
+
+        .item-card.no-click {
+            cursor: default;
+        }
+
+        .item-card.no-click:hover {
+            transform: none;
+        }
+
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .item-title {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+
+        .item-meta {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            padding: 16px 24px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.3s, transform 0.3s;
+            z-index: 1000;
+            max-width: 400px;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            background: #28a745;
+        }
+
+        .toast.error {
+            background: #dc3545;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ffffff40;
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #888;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #0f3460;
+            }
+
+            .section-list {
+                display: flex;
+                gap: 10px;
+                overflow-x: auto;
+                padding-bottom: 10px;
+            }
+
+            .section-item {
+                flex-shrink: 0;
+                margin-bottom: 0;
+            }
+
+            .items-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <h2>Libraries</h2>
+        <ul class="section-list" id="sectionList">
+            <li class="loading"><div class="spinner"></div></li>
+        </ul>
+    </aside>
+
+    <main class="main" id="main">
+        <div class="empty-state">
+            <h3>Select a library</h3>
+            <p>Choose a library from the sidebar to browse its contents</p>
+        </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let currentSection = null;
+        let currentSectionId = null;
+
+        async function fetchJson(url, options = {}) {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: 'Request failed' }));
+                throw new Error(error.error || 'Request failed');
+            }
+            return response.json();
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        async function triggerRefresh(sectionId, path = null, button = null) {
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner"></span> Refreshing...';
+            }
+
+            try {
+                const body = { section_id: sectionId };
+                if (path) body.path = path;
+
+                await fetchJson('/api/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                showToast(path ? 'Item refresh triggered!' : 'Library refresh triggered!', 'success');
+            } catch (error) {
+                showToast(`Refresh failed: ${error.message}`, 'error');
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = '&#x21bb; Refresh';
+                }
+            }
+        }
+
+        async function loadSections() {
+            try {
+                const sections = await fetchJson('/api/sections');
+                const list = document.getElementById('sectionList');
+
+                if (sections.length === 0) {
+                    list.innerHTML = '<li class="empty-state">No libraries found</li>';
+                    return;
+                }
+
+                list.innerHTML = sections.map(section => `
+                    <li class="section-item" data-id="${section.id}" data-type="${section.type}">
+                        <div>${section.title}</div>
+                        <div class="section-type">${section.type}</div>
+                    </li>
+                `).join('');
+
+                list.querySelectorAll('.section-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        document.querySelectorAll('.section-item').forEach(i => i.classList.remove('active'));
+                        item.classList.add('active');
+                        loadSection(item.dataset.id, item.textContent.trim().split('\n')[0], item.dataset.type);
+                    });
+                });
+            } catch (error) {
+                document.getElementById('sectionList').innerHTML =
+                    `<li class="empty-state">Error loading libraries: ${error.message}</li>`;
+            }
+        }
+
+        async function loadSection(sectionId, title, type) {
+            const main = document.getElementById('main');
+            main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            currentSection = { id: sectionId, title, type };
+            currentSectionId = sectionId;
+
+            try {
+                const data = await fetchJson(`/api/sections/${sectionId}`);
+                renderItems(data, type);
+            } catch (error) {
+                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${error.message}</p></div>`;
+            }
+        }
+
+        function renderItems(data, type) {
+            const main = document.getElementById('main');
+            const isShow = type === 'show';
+
+            main.innerHTML = `
+                <nav class="breadcrumb">
+                    <span class="breadcrumb-current">${data.title || currentSection.title}</span>
+                </nav>
+                <div class="header">
+                    <h1>${data.title || currentSection.title}</h1>
+                    <button class="refresh-btn" onclick="triggerRefresh('${currentSectionId}', null, this)">
+                        &#x21bb; Refresh Library
+                    </button>
+                </div>
+                <div class="items-grid">
+                    ${data.items.map(item => `
+                        <div class="item-card ${isShow ? '' : 'no-click'}"
+                             ${isShow ? `onclick="loadSeasons('${item.id}', '${escapeHtml(item.title)}')"` : ''}>
+                            <div class="item-header">
+                                <div>
+                                    <div class="item-title">${item.title}</div>
+                                    <div class="item-meta">${item.type}</div>
+                                </div>
+                                ${item.path ? `
+                                    <button class="refresh-btn small" onclick="event.stopPropagation(); triggerRefresh('${currentSectionId}', '${escapeHtml(item.path)}', this)">
+                                        &#x21bb; Refresh
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            if (data.items.length === 0) {
+                main.innerHTML += '<div class="empty-state"><h3>No items found</h3></div>';
+            }
+        }
+
+        async function loadSeasons(showId, showTitle) {
+            const main = document.getElementById('main');
+            main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            try {
+                const data = await fetchJson(`/api/shows/${showId}/seasons`);
+                renderSeasons(data, showId, showTitle);
+            } catch (error) {
+                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${error.message}</p></div>`;
+            }
+        }
+
+        function renderSeasons(data, showId, showTitle) {
+            const main = document.getElementById('main');
+
+            main.innerHTML = `
+                <nav class="breadcrumb">
+                    <a class="breadcrumb-item" onclick="loadSection('${currentSectionId}', '${escapeHtml(currentSection.title)}', '${currentSection.type}')">${currentSection.title}</a>
+                    <span class="breadcrumb-separator">/</span>
+                    <span class="breadcrumb-current">${showTitle}</span>
+                </nav>
+                <div class="header">
+                    <h1>${showTitle}</h1>
+                    <button class="refresh-btn" onclick="triggerRefresh('${currentSectionId}', null, this)">
+                        &#x21bb; Refresh Library
+                    </button>
+                </div>
+                <div class="items-grid">
+                    ${data.seasons.map(season => `
+                        <div class="item-card" onclick="loadEpisodes('${season.id}', '${escapeHtml(showTitle)}', '${escapeHtml(season.title)}')">
+                            <div class="item-header">
+                                <div>
+                                    <div class="item-title">${season.title}</div>
+                                    <div class="item-meta">Season ${season.index}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function loadEpisodes(seasonId, showTitle, seasonTitle) {
+            const main = document.getElementById('main');
+            main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            try {
+                const data = await fetchJson(`/api/seasons/${seasonId}/episodes`);
+                renderEpisodes(data, seasonId, showTitle, seasonTitle);
+            } catch (error) {
+                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${error.message}</p></div>`;
+            }
+        }
+
+        function renderEpisodes(data, seasonId, showTitle, seasonTitle) {
+            const main = document.getElementById('main');
+
+            main.innerHTML = `
+                <nav class="breadcrumb">
+                    <a class="breadcrumb-item" onclick="loadSection('${currentSectionId}', '${escapeHtml(currentSection.title)}', '${currentSection.type}')">${currentSection.title}</a>
+                    <span class="breadcrumb-separator">/</span>
+                    <a class="breadcrumb-item" onclick="loadSeasons('${data.show_id || ''}', '${escapeHtml(showTitle)}')">${showTitle}</a>
+                    <span class="breadcrumb-separator">/</span>
+                    <span class="breadcrumb-current">${seasonTitle}</span>
+                </nav>
+                <div class="header">
+                    <h1>${seasonTitle}</h1>
+                    <button class="refresh-btn" onclick="triggerRefresh('${currentSectionId}', null, this)">
+                        &#x21bb; Refresh Library
+                    </button>
+                </div>
+                <div class="items-grid">
+                    ${data.episodes.map(episode => `
+                        <div class="item-card no-click">
+                            <div class="item-header">
+                                <div>
+                                    <div class="item-title">${episode.index}. ${episode.title}</div>
+                                    <div class="item-meta">Episode ${episode.index}</div>
+                                </div>
+                                ${episode.path ? `
+                                    <button class="refresh-btn small" onclick="triggerRefresh('${currentSectionId}', '${escapeHtml(episode.path)}', this)">
+                                        &#x21bb; Refresh
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[char]);
+        }
+
+        // Initialize
+        loadSections();
+    </script>
+</body>
+</html>
