@@ -134,6 +134,19 @@
             font-size: 0.9rem;
         }
 
+        .refresh-btn.secondary {
+            background: #0f3460;
+        }
+
+        .refresh-btn.secondary:hover {
+            background: #1a4a7a;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+
         .items-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -288,6 +301,7 @@
     <script>
         let currentSection = null;
         let currentSectionId = null;
+        let itemsCache = {};
 
         async function fetchJson(url, options = {}) {
             const response = await fetch(url, options);
@@ -334,6 +348,41 @@
             }
         }
 
+        function handleRefreshClick(event, itemId) {
+            event.stopPropagation();
+            const item = itemsCache[itemId];
+            if (item && item.path) {
+                triggerRefresh(currentSectionId, item.path, event.target);
+            }
+        }
+
+        async function reloadData(button) {
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner"></span> Reloading...';
+            }
+
+            try {
+                await fetchJson('/api/cache/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                // Reload current section
+                if (currentSection) {
+                    await loadSection(currentSection.id, currentSection.title, currentSection.type);
+                }
+                showToast('Data reloaded from Plex', 'success');
+            } catch (error) {
+                showToast(`Reload failed: ${error.message}`, 'error');
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = '&#x21bb; Reload';
+                }
+            }
+        }
+
         async function loadSections() {
             try {
                 const sections = await fetchJson('/api/sections');
@@ -346,7 +395,7 @@
 
                 list.innerHTML = sections.map(section => `
                     <li class="section-item" data-id="${section.id}" data-type="${section.type}">
-                        <div>${section.title}</div>
+                        <div>${escapeHtml(section.title)}</div>
                         <div class="section-type">${section.type}</div>
                     </li>
                 `).join('');
@@ -355,7 +404,7 @@
                     item.addEventListener('click', () => {
                         document.querySelectorAll('.section-item').forEach(i => i.classList.remove('active'));
                         item.classList.add('active');
-                        loadSection(item.dataset.id, item.textContent.trim().split('\n')[0], item.dataset.type);
+                        loadSection(item.dataset.id, item.querySelector('div').textContent, item.dataset.type);
                     });
                 });
             } catch (error) {
@@ -375,7 +424,7 @@
                 const data = await fetchJson(`/api/sections/${sectionId}`);
                 renderItems(data, type);
             } catch (error) {
-                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${error.message}</p></div>`;
+                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(error.message)}</p></div>`;
             }
         }
 
@@ -383,35 +432,66 @@
             const main = document.getElementById('main');
             const isShow = type === 'show';
 
+            // Cache items for path lookup
+            data.items.forEach(item => {
+                itemsCache[item.id] = item;
+            });
+
             main.innerHTML = `
                 <nav class="breadcrumb">
-                    <span class="breadcrumb-current">${data.title || currentSection.title}</span>
+                    <span class="breadcrumb-current">${escapeHtml(data.title || currentSection.title)}</span>
                 </nav>
                 <div class="header">
-                    <h1>${data.title || currentSection.title}</h1>
-                    <button class="refresh-btn" onclick="triggerRefresh('${currentSectionId}', null, this)">
-                        &#x21bb; Refresh Library
-                    </button>
+                    <h1>${escapeHtml(data.title || currentSection.title)}</h1>
+                    <div class="btn-group">
+                        <button class="refresh-btn secondary reload-data">&#x21bb; Reload</button>
+                        <button class="refresh-btn refresh-library">&#x21bb; Scan Library</button>
+                    </div>
                 </div>
                 <div class="items-grid">
                     ${data.items.map(item => `
-                        <div class="item-card ${isShow ? '' : 'no-click'}"
-                             ${isShow ? `onclick="loadSeasons('${item.id}', '${escapeHtml(item.title)}')"` : ''}>
+                        <div class="item-card ${isShow ? 'clickable-show' : 'no-click'}" data-id="${item.id}">
                             <div class="item-header">
                                 <div>
-                                    <div class="item-title">${item.title}</div>
+                                    <div class="item-title">${escapeHtml(item.title)}</div>
                                     <div class="item-meta">${item.type}</div>
                                 </div>
-                                ${item.path ? `
-                                    <button class="refresh-btn small" onclick="event.stopPropagation(); triggerRefresh('${currentSectionId}', '${escapeHtml(item.path)}', this)">
-                                        &#x21bb; Refresh
-                                    </button>
-                                ` : ''}
+                                ${item.path ? `<button class="refresh-btn small item-refresh" data-id="${item.id}">&#x21bb; Scan</button>` : ''}
                             </div>
                         </div>
                     `).join('')}
                 </div>
             `;
+
+            // Attach event listeners
+            main.querySelector('.reload-data').addEventListener('click', function() {
+                reloadData(this);
+            });
+
+            main.querySelector('.refresh-library').addEventListener('click', function() {
+                triggerRefresh(currentSectionId, null, this);
+            });
+
+            main.querySelectorAll('.item-refresh').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const item = itemsCache[this.dataset.id];
+                    if (item && item.path) {
+                        triggerRefresh(currentSectionId, item.path, this);
+                    }
+                });
+            });
+
+            if (isShow) {
+                main.querySelectorAll('.clickable-show').forEach(card => {
+                    card.addEventListener('click', function() {
+                        const item = itemsCache[this.dataset.id];
+                        if (item) {
+                            loadSeasons(item.id, item.title);
+                        }
+                    });
+                });
+            }
 
             if (data.items.length === 0) {
                 main.innerHTML += '<div class="empty-state"><h3>No items found</h3></div>';
@@ -426,31 +506,37 @@
                 const data = await fetchJson(`/api/shows/${showId}/seasons`);
                 renderSeasons(data, showId, showTitle);
             } catch (error) {
-                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${error.message}</p></div>`;
+                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(error.message)}</p></div>`;
             }
         }
 
         function renderSeasons(data, showId, showTitle) {
             const main = document.getElementById('main');
 
+            // Cache seasons
+            data.seasons.forEach(season => {
+                itemsCache[season.id] = { ...season, showTitle };
+            });
+
             main.innerHTML = `
                 <nav class="breadcrumb">
-                    <a class="breadcrumb-item" onclick="loadSection('${currentSectionId}', '${escapeHtml(currentSection.title)}', '${currentSection.type}')">${currentSection.title}</a>
+                    <a class="breadcrumb-item breadcrumb-section">${escapeHtml(currentSection.title)}</a>
                     <span class="breadcrumb-separator">/</span>
-                    <span class="breadcrumb-current">${showTitle}</span>
+                    <span class="breadcrumb-current">${escapeHtml(showTitle)}</span>
                 </nav>
                 <div class="header">
-                    <h1>${showTitle}</h1>
-                    <button class="refresh-btn" onclick="triggerRefresh('${currentSectionId}', null, this)">
-                        &#x21bb; Refresh Library
-                    </button>
+                    <h1>${escapeHtml(showTitle)}</h1>
+                    <div class="btn-group">
+                        <button class="refresh-btn secondary reload-data">&#x21bb; Reload</button>
+                        <button class="refresh-btn refresh-library">&#x21bb; Scan Library</button>
+                    </div>
                 </div>
                 <div class="items-grid">
                     ${data.seasons.map(season => `
-                        <div class="item-card" onclick="loadEpisodes('${season.id}', '${escapeHtml(showTitle)}', '${escapeHtml(season.title)}')">
+                        <div class="item-card clickable-season" data-id="${season.id}" data-show-title="${escapeAttr(showTitle)}">
                             <div class="item-header">
                                 <div>
-                                    <div class="item-title">${season.title}</div>
+                                    <div class="item-title">${escapeHtml(season.title)}</div>
                                     <div class="item-meta">Season ${season.index}</div>
                                 </div>
                             </div>
@@ -458,6 +544,28 @@
                     `).join('')}
                 </div>
             `;
+
+            // Attach event listeners
+            main.querySelector('.breadcrumb-section').addEventListener('click', function() {
+                loadSection(currentSectionId, currentSection.title, currentSection.type);
+            });
+
+            main.querySelector('.reload-data').addEventListener('click', function() {
+                reloadData(this);
+            });
+
+            main.querySelector('.refresh-library').addEventListener('click', function() {
+                triggerRefresh(currentSectionId, null, this);
+            });
+
+            main.querySelectorAll('.clickable-season').forEach(card => {
+                card.addEventListener('click', function() {
+                    const season = itemsCache[this.dataset.id];
+                    if (season) {
+                        loadEpisodes(season.id, this.dataset.showTitle, season.title);
+                    }
+                });
+            });
         }
 
         async function loadEpisodes(seasonId, showTitle, seasonTitle) {
@@ -468,50 +576,95 @@
                 const data = await fetchJson(`/api/seasons/${seasonId}/episodes`);
                 renderEpisodes(data, seasonId, showTitle, seasonTitle);
             } catch (error) {
-                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${error.message}</p></div>`;
+                main.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${escapeHtml(error.message)}</p></div>`;
             }
         }
 
         function renderEpisodes(data, seasonId, showTitle, seasonTitle) {
             const main = document.getElementById('main');
 
+            // Cache episodes
+            data.episodes.forEach(episode => {
+                itemsCache[episode.id] = episode;
+            });
+
+            const showId = data.show_id || '';
+
             main.innerHTML = `
                 <nav class="breadcrumb">
-                    <a class="breadcrumb-item" onclick="loadSection('${currentSectionId}', '${escapeHtml(currentSection.title)}', '${currentSection.type}')">${currentSection.title}</a>
+                    <a class="breadcrumb-item breadcrumb-section">${escapeHtml(currentSection.title)}</a>
                     <span class="breadcrumb-separator">/</span>
-                    <a class="breadcrumb-item" onclick="loadSeasons('${data.show_id || ''}', '${escapeHtml(showTitle)}')">${showTitle}</a>
+                    <a class="breadcrumb-item breadcrumb-show" data-show-id="${showId}" data-show-title="${escapeAttr(showTitle)}">${escapeHtml(showTitle)}</a>
                     <span class="breadcrumb-separator">/</span>
-                    <span class="breadcrumb-current">${seasonTitle}</span>
+                    <span class="breadcrumb-current">${escapeHtml(seasonTitle)}</span>
                 </nav>
                 <div class="header">
-                    <h1>${seasonTitle}</h1>
-                    <button class="refresh-btn" onclick="triggerRefresh('${currentSectionId}', null, this)">
-                        &#x21bb; Refresh Library
-                    </button>
+                    <h1>${escapeHtml(seasonTitle)}</h1>
+                    <div class="btn-group">
+                        <button class="refresh-btn secondary reload-data">&#x21bb; Reload</button>
+                        <button class="refresh-btn refresh-library">&#x21bb; Scan Library</button>
+                    </div>
                 </div>
                 <div class="items-grid">
                     ${data.episodes.map(episode => `
                         <div class="item-card no-click">
                             <div class="item-header">
                                 <div>
-                                    <div class="item-title">${episode.index}. ${episode.title}</div>
+                                    <div class="item-title">${episode.index}. ${escapeHtml(episode.title)}</div>
                                     <div class="item-meta">Episode ${episode.index}</div>
                                 </div>
-                                ${episode.path ? `
-                                    <button class="refresh-btn small" onclick="triggerRefresh('${currentSectionId}', '${escapeHtml(episode.path)}', this)">
-                                        &#x21bb; Refresh
-                                    </button>
-                                ` : ''}
+                                ${episode.path ? `<button class="refresh-btn small item-refresh" data-id="${episode.id}">&#x21bb; Scan</button>` : ''}
                             </div>
                         </div>
                     `).join('')}
                 </div>
             `;
+
+            // Attach event listeners
+            main.querySelector('.breadcrumb-section').addEventListener('click', function() {
+                loadSection(currentSectionId, currentSection.title, currentSection.type);
+            });
+
+            const showLink = main.querySelector('.breadcrumb-show');
+            if (showLink) {
+                showLink.addEventListener('click', function() {
+                    loadSeasons(this.dataset.showId, this.dataset.showTitle);
+                });
+            }
+
+            main.querySelector('.reload-data').addEventListener('click', function() {
+                reloadData(this);
+            });
+
+            main.querySelector('.refresh-library').addEventListener('click', function() {
+                triggerRefresh(currentSectionId, null, this);
+            });
+
+            main.querySelectorAll('.item-refresh').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const episode = itemsCache[this.dataset.id];
+                    if (episode && episode.path) {
+                        triggerRefresh(currentSectionId, episode.path, this);
+                    }
+                });
+            });
         }
 
         function escapeHtml(str) {
             if (!str) return '';
-            return str.replace(/[&<>"']/g, char => ({
+            return String(str).replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[char]);
+        }
+
+        function escapeAttr(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"']/g, char => ({
                 '&': '&amp;',
                 '<': '&lt;',
                 '>': '&gt;',
